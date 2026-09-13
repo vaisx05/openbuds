@@ -1,0 +1,13 @@
+[package]
+name = "buds-cli"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "buds-cli"
+path = "src/main.rs"
+
+[dependencies]
+buds-core = { path = "../buds-core" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
+futures = "0.3"

@@ -1,0 +1,14 @@
+[workspace]
+resolver = "2"
+members = ["buds-core", "buds-cli"]
+
+# Vendored fork of btleplug 0.11.8 with one addition: a `retrieve_connected`
+# call on the macOS/CoreBluetooth Adapter that wraps
+# `retrieveConnectedPeripheralsWithServices`. Upstream btleplug only
+# populates its peripheral cache from live scan discoveries, which misses
+# devices the OS already has an active GATT connection to (e.g. reconnected
+# automatically in the background) - exactly the case this project needs to
+# handle reliably. See vendor/btleplug/src/corebluetooth/{internal,adapter}.rs
+# for the diff against upstream.
+[patch.crates-io]
+btleplug = { path = "vendor/btleplug" }
