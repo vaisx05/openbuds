@@ -100,6 +100,13 @@ button.active {
   opacity: 0.7;
 }
 
+.hint {
+  font-size: 0.8rem;
+  opacity: 0.65;
+  max-width: 18rem;
+  margin: -0.25rem 0 0;
+}
+
 .error {
   color: #d83939;
   font-size: 0.85rem;

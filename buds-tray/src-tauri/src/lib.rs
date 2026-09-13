@@ -28,6 +28,10 @@ enum ConnectionStatePayload {
     Disconnected,
     LookingForConnectedDevice,
     Scanning,
+    // `rename_all` on the enum only renames variant tags, not fields
+    // inside a struct variant - needs repeating per-variant, or the field
+    // silently keeps its snake_case name in the JSON the frontend reads.
+    #[serde(rename_all = "camelCase")]
     Connected { device_name: String },
     Failed { reason: String },
 }

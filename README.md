@@ -12,11 +12,17 @@ working macOS-only Swift/CoreBluetooth prototype ([`nordbuds4.swift`](nordbuds4.
 
 - **ANC (on/off/transparency): confirmed working**, verified against the
   physical device and the official OnePlus app.
-- **Battery (left/right/case %): confirmed working**, verified against the
-  OnePlus app's own displayed percentages.
+- **Battery (left/right/case %): confirmed working, but only while a phone
+  running the OnePlus app is also connected to the buds.** This app doesn't
+  request battery status - it just listens for a push the buds send on
+  their own, and that push only happens with a phone in the picture (see
+  [Protocol notes](#protocol-notes)).
 - **Discovery: reliable.** Connects directly to an already-OS-connected
   peripheral (no BLE scan needed) via a vendored `btleplug` patch - see
   below.
+- **Tray app** (`buds-tray/`, Tauri + React): functional shell with
+  connection status, ANC buttons, and battery display. No 3D model or
+  visual design pass yet.
 - Adaptive ANC mode: byte not yet found.
 - Some passive status pushes (`kind=0x02` "device status", `cat=0x01
   sub=0x05`) are logged but not decoded - see [Protocol notes](#protocol-notes).
@@ -24,8 +30,9 @@ working macOS-only Swift/CoreBluetooth prototype ([`nordbuds4.swift`](nordbuds4.
 ## Layout
 
 ```
-buds-core/   BLE + protocol logic (library crate)
-buds-cli/    CLI: on / off / trans / battery / monitor / help
+buds-core/        BLE + protocol logic (library crate)
+buds-cli/         CLI: on / off / trans / battery / monitor / help
+buds-tray/        Tauri + React tray app (own Cargo workspace)
 vendor/btleplug/  vendored fork of btleplug 0.11.8 (see below)
 nordbuds4.swift   original macOS-only Swift/CoreBluetooth prototype (reference)
 ```
@@ -77,14 +84,16 @@ is documented in `buds-core/src/response.rs`. Summary:
 - **Device status** (`CAT=0x04 SUB=0x02`) pushed spontaneously by the buds,
   envelope `[LEN_u16_le, ...content...]`, `content[0]` is a "kind" byte:
   - `kind=0x01`: **battery**, tags 1/2/3 = left/right/case %. Confirmed
-    against the OnePlus app.
+    against the OnePlus app. **Confirmed to require a phone (running the
+    OnePlus app) connected to the buds at the same time** - with just a
+    Mac connected, zero of these pushes appear no matter what physical
+    action is performed; connecting a phone alongside it produces one
+    within seconds.
   - `kind=0x02`: fluctuating small values (0-7), not yet decoded - looks
     more like a continuous signal (motion/RSSI?) than a clean wear-state
-    enum. **Only observed while the OnePlus phone app was also connected**
-    - with just this Mac connected, these pushes stopped appearing
-      entirely even when performing the same physical actions. Likely a
-      firmware behavior tied to the phone's audio session, not something
-      fixable from this side.
+    enum. Same phone-required behavior as `kind=0x01` above. Likely a
+    firmware behavior tied to the phone's audio session, not something
+    fixable from this side.
   - `kind=0xF1`: periodic heartbeat, always `(01, 00)`.
 - `CAT=0x00 SUB=0x04`: a JSON diagnostics blob (`boxchg_err_baseinfo`,
   charging/error counters), sent once after Hello.

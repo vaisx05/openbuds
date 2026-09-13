@@ -48,6 +48,7 @@ function App() {
   });
   const [activeMode, setActiveMode] = useState<AncMode | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showPhoneHint, setShowPhoneHint] = useState(false);
 
   useEffect(() => {
     const unlistenConnection = listen<ConnectionState>(
@@ -67,6 +68,22 @@ function App() {
   }, []);
 
   const isConnected = connection.state === "connected";
+  const hasBattery =
+    battery.left !== null || battery.right !== null || battery.case !== null;
+
+  // The buds don't respond to a battery *query* - they only push a status
+  // update on their own, and that push has been confirmed to require a
+  // phone (running the OnePlus app) also connected at the same time. So
+  // "still —  after a while" almost always means "no phone connected",
+  // not "broken" - surface that rather than leaving it silent.
+  useEffect(() => {
+    if (!isConnected || hasBattery) {
+      setShowPhoneHint(false);
+      return;
+    }
+    const timer = setTimeout(() => setShowPhoneHint(true), 12_000);
+    return () => clearTimeout(timer);
+  }, [isConnected, hasBattery]);
 
   async function setMode(mode: AncMode) {
     setError(null);
@@ -107,6 +124,13 @@ function App() {
           <span className="battery-value">{batteryLabel(battery.case)}</span>
         </div>
       </div>
+
+      {showPhoneHint && (
+        <p className="hint">
+          No battery data yet — the buds only push it while your phone
+          (with the OnePlus app) is also connected.
+        </p>
+      )}
 
       <div className="anc-row">
         <button
