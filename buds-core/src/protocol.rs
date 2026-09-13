@@ -45,3 +45,14 @@ pub fn anc_set_packet(mode: AncMode) -> [u8; 12] {
         mode.raw(),
     ]
 }
+
+/// Builds a minimal, payload-less request packet: `AA <LEN> 00 00 <CAT>
+/// <SUB> <SEQ>`, with `LEN` set to the confirmed frame rule (count of
+/// bytes following the LEN byte itself - verified against the ANC Set
+/// packet above, which has no trailing bytes beyond its payload).
+///
+/// Exploratory only - for probing undocumented request opcodes (see
+/// `buds-cli`'s `probe` command). Not used by any confirmed feature.
+pub fn query_packet(cat: u8, sub: u8, seq: u8) -> [u8; 7] {
+    [0xAA, 0x05, 0x00, 0x00, cat, sub, seq]
+}

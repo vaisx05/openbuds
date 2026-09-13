@@ -58,6 +58,13 @@ impl ConnectedBuds {
         ble::write_packet(&self.peripheral, &self.write_char, &packet).await
     }
 
+    /// Send an arbitrary raw packet - for probing undocumented request
+    /// opcodes (see `buds-cli`'s `probe` command). Not used by any
+    /// confirmed feature; exists purely for protocol exploration.
+    pub async fn send_raw(&self, data: &[u8]) -> Result<(), BudsError> {
+        ble::write_packet(&self.peripheral, &self.write_char, data).await
+    }
+
     /// Battery packet format is not yet reverse-engineered. This just gives
     /// callers a way to listen to whatever notifications arrive so the
     /// format can be captured/inspected (see plan Verification).

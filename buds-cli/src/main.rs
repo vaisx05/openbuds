@@ -12,20 +12,55 @@ enum Command {
     Transparency,
     Battery,
     Monitor,
+    /// `Some((cat, sub))` for a single ad-hoc candidate (from extra CLI
+    /// args); `None` runs the built-in candidate list.
+    Probe(Option<(u8, u8)>),
     Help,
 }
 
-fn parse_command(arg: &str) -> Option<Command> {
-    match arg.to_lowercase().as_str() {
+fn parse_hex_byte(s: &str) -> Option<u8> {
+    let s = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")).unwrap_or(s);
+    u8::from_str_radix(s, 16).ok()
+}
+
+fn parse_command(args: &[String]) -> Option<Command> {
+    match args[1].to_lowercase().as_str() {
         "on" | "anc" => Some(Command::On),
         "off" => Some(Command::Off),
         "trans" | "transparency" => Some(Command::Transparency),
         "battery" => Some(Command::Battery),
         "monitor" | "watch" => Some(Command::Monitor),
+        "probe" => match (args.get(2), args.get(3)) {
+            (Some(cat), Some(sub)) => {
+                let cat = parse_hex_byte(cat)?;
+                let sub = parse_hex_byte(sub)?;
+                Some(Command::Probe(Some((cat, sub))))
+            }
+            (None, None) => Some(Command::Probe(None)),
+            _ => None,
+        },
         "help" | "--help" | "-h" => Some(Command::Help),
         _ => None,
     }
 }
+
+/// Exploratory: candidate "get status" request packets to try, on the
+/// theory that the device-status push we only ever see passively (and
+/// only with a phone connected) might actually be a response to a request
+/// we've just never sent ourselves. Every confirmed request/response pair
+/// so far echoes the SEQ byte back (Hello 0x23, ANC Set 0x44) - each
+/// candidate here gets a distinct SEQ so any reply can be matched back to
+/// whichever probe triggered it. Not based on any confirmed documentation -
+/// pure trial and error, same way the ANC mode bytes themselves were found.
+const PROBE_INTERVAL_SECS: u64 = 4;
+
+const PROBE_CANDIDATES: &[(u8, u8, u8, &str)] = &[
+    (0x04, 0x02, 0x50, "CAT=0x04 SUB=0x02 (mirrors the passive device-status push's own SUB)"),
+    (0x00, 0x02, 0x51, "CAT=0x00 SUB=0x02"),
+    (0x00, 0x08, 0x52, "CAT=0x00 SUB=0x08 (guess: battery lives under System)"),
+    (0x04, 0x01, 0x53, "CAT=0x04 SUB=0x01 (mirrors Hello's SUB=0x01 under ANC category)"),
+    (0x00, 0x03, 0x54, "CAT=0x00 SUB=0x03"),
+];
 
 fn print_help(bin: &str) {
     let lines = [
@@ -43,6 +78,11 @@ fn print_help(bin: &str) {
         "                 as long as it runs (Ctrl-C to stop) - use this to correlate a".into(),
         "                 specific physical action (take one bud out, put it in the".into(),
         "                 case, etc.) with the exact event(s) it produces".into(),
+        "  probe          (experimental) Try a handful of candidate \"get status\"".into(),
+        "                 request packets, to see if battery can be read without a".into(),
+        "                 phone connected - pure trial and error, not documented".into(),
+        "  probe <cat> <sub>  Try one specific CAT/SUB pair instead (hex, e.g.".into(),
+        "                 \"probe 00 05\" or \"probe 0x00 0x05\")".into(),
         "  help           Show this help message".into(),
         String::new(),
         "Notes:".into(),
@@ -70,14 +110,14 @@ async fn main() {
             print_help(&args[0]);
             exit(0);
         }
-        Some(arg) => match parse_command(arg) {
+        Some(arg) => match parse_command(&args) {
             Some(Command::Help) => {
                 print_help(&args[0]);
                 exit(0);
             }
             Some(cmd) => cmd,
             None => {
-                eprintln!("[ERROR] Unknown command: {arg}");
+                eprintln!("[ERROR] Unknown command or arguments: {arg} {:?}", &args[2..]);
                 eprintln!("Run '{}' help for usage", args[0]);
                 exit(1);
             }
@@ -188,6 +228,34 @@ async fn main() {
             );
             tokio::time::sleep(Duration::from_secs(LISTEN_SECS)).await;
             println!("[*] done monitoring");
+        }
+        Command::Probe(custom) => {
+            const ADHOC_SEQ: u8 = 0x60;
+            let candidates: Vec<(u8, u8, u8, String)> = match custom {
+                Some((cat, sub)) => vec![(cat, sub, ADHOC_SEQ, "ad-hoc".to_string())],
+                None => PROBE_CANDIDATES
+                    .iter()
+                    .map(|(c, s, sq, l)| (*c, *s, *sq, l.to_string()))
+                    .collect(),
+            };
+            println!(
+                "[*] Trying {} candidate \"get status\" packet(s), {}s apart. Watch the [RX] lines \
+                 above/after each [PROBE] line for anything new - especially a device status or \
+                 battery event with the SAME seq this probe just sent.",
+                candidates.len(),
+                PROBE_INTERVAL_SECS
+            );
+            for (cat, sub, seq, label) in candidates {
+                let packet = buds_core::protocol::query_packet(cat, sub, seq);
+                println!("[PROBE] sending CAT=0x{cat:02X} SUB=0x{sub:02X} SEQ=0x{seq:02X} - {label}");
+                match connected.send_raw(&packet).await {
+                    Ok(()) => {}
+                    Err(BudsError::Timeout(msg)) => eprintln!("[WARN] {msg}"),
+                    Err(e) => eprintln!("[ERROR] send failed: {e}"),
+                }
+                tokio::time::sleep(Duration::from_secs(PROBE_INTERVAL_SECS)).await;
+            }
+            println!("[*] done probing - review [RX] lines above for any response");
         }
         Command::Help => unreachable!(),
     }
