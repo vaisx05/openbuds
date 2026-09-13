@@ -182,6 +182,9 @@ async fn main() {
                         "[+{t:>6.2}s] [RX] unknown cat=0x{:02X} sub=0x{:02X} seq=0x{:02X} payload={:02X?}",
                         raw.cat, raw.sub, raw.seq, raw.payload
                     );
+                    for text in buds_core::response::ascii_strings(&raw.payload, 4) {
+                        println!("[+{t:>6.2}s] [ASCII] \"{text}\"");
+                    }
                 }
             }
         }
@@ -224,7 +227,11 @@ async fn main() {
                 "[*] Streaming every raw notification for up to {LISTEN_SECS}s, with an elapsed-time \
                  prefix. Perform ONE physical action at a time (e.g. only take the left bud out, \
                  wait a couple seconds, then only put it back) so the timestamps let you correlate \
-                 cause and effect precisely. Ctrl-C to stop early."
+                 cause and effect precisely. Any readable text found in an unclassified payload is \
+                 flagged as [ASCII] - useful for spotting a device name if the buds report connected \
+                 devices this way. To test that specifically: leave this running, then toggle your \
+                 phone's Bluetooth off and back on (or connect/disconnect it from the buds) and \
+                 watch for a device-name string. Ctrl-C to stop early."
             );
             tokio::time::sleep(Duration::from_secs(LISTEN_SECS)).await;
             println!("[*] done monitoring");

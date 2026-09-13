@@ -152,6 +152,32 @@ pub struct BatteryStatus {
     pub case_: Option<u8>,
 }
 
+/// Scans raw bytes for runs of printable ASCII (space through `~`) at
+/// least `min_len` long. Useful for spotting a device name or similar text
+/// buried in an otherwise-unclassified payload - e.g. the CAT=0x00 SUB=0x04
+/// diagnostics blob turned out to be a literal JSON string this way. A
+/// device-name/connected-devices feature (if the buds expose one at all)
+/// would very plausibly show up the same way: as readable text inside a
+/// frame we haven't classified yet.
+pub fn ascii_strings(bytes: &[u8], min_len: usize) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut current = Vec::new();
+    for &b in bytes {
+        if (0x20..=0x7E).contains(&b) {
+            current.push(b);
+        } else if current.len() >= min_len {
+            found.push(String::from_utf8_lossy(&current).into_owned());
+            current.clear();
+        } else {
+            current.clear();
+        }
+    }
+    if current.len() >= min_len {
+        found.push(String::from_utf8_lossy(&current).into_owned());
+    }
+    found
+}
+
 const BATTERY_KIND: u8 = 0x01;
 
 pub fn battery_guess(event: &NotificationEvent) -> Option<BatteryStatus> {
