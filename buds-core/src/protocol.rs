@@ -30,19 +30,16 @@ pub const HELLO_PACKET: [u8; 10] = [0xAA, 0x07, 0x00, 0x00, 0x00, 0x01, 0x23, 0x
 const ANC_SET_SEQ: u8 = 0x44;
 
 pub fn anc_set_packet(mode: AncMode) -> [u8; 12] {
+    anc_set_packet_raw(mode.raw())
+}
+
+/// Same ANC Set framing as `anc_set_packet`, but takes a raw mode byte
+/// instead of the confirmed `AncMode` enum - for probing the still-unsolved
+/// Adaptive mode byte (see `buds-cli`'s `anc-raw` command). Not used by any
+/// confirmed feature.
+pub fn anc_set_packet_raw(mode: u8) -> [u8; 12] {
     [
-        0xAA,
-        0x0A,
-        0x00,
-        0x00,
-        0x04,
-        0x04,
-        ANC_SET_SEQ,
-        0x03,
-        0x00,
-        0x01,
-        0x01,
-        mode.raw(),
+        0xAA, 0x0A, 0x00, 0x00, 0x04, 0x04, ANC_SET_SEQ, 0x03, 0x00, 0x01, 0x01, mode,
     ]
 }
 

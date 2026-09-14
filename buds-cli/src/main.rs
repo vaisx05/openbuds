@@ -15,6 +15,9 @@ enum Command {
     /// `Some((cat, sub))` for a single ad-hoc candidate (from extra CLI
     /// args); `None` runs the built-in candidate list.
     Probe(Option<(u8, u8)>),
+    /// Send an ANC Set packet with an arbitrary raw mode byte, for probing
+    /// the still-unsolved Adaptive mode byte.
+    AncRaw(u8),
     Help,
 }
 
@@ -39,6 +42,10 @@ fn parse_command(args: &[String]) -> Option<Command> {
             (None, None) => Some(Command::Probe(None)),
             _ => None,
         },
+        "anc-raw" | "ancraw" => {
+            let mode = parse_hex_byte(args.get(2)?)?;
+            Some(Command::AncRaw(mode))
+        }
         "help" | "--help" | "-h" => Some(Command::Help),
         _ => None,
     }
@@ -83,6 +90,10 @@ fn print_help(bin: &str) {
         "                 phone connected - pure trial and error, not documented".into(),
         "  probe <cat> <sub>  Try one specific CAT/SUB pair instead (hex, e.g.".into(),
         "                 \"probe 00 05\" or \"probe 0x00 0x05\")".into(),
+        "  anc-raw <mode>  (experimental) Send an ANC Set packet with an arbitrary hex".into(),
+        "                 mode byte, then listen for a bit - for probing the unsolved".into(),
+        "                 Adaptive mode byte (e.g. \"anc-raw 06\"). Watch for an".into(),
+        "                 [ASCII] \"adaptive_general_info\" line with non-zero fields.".into(),
         "  help           Show this help message".into(),
         String::new(),
         "Notes:".into(),
@@ -263,6 +274,23 @@ async fn main() {
                 tokio::time::sleep(Duration::from_secs(PROBE_INTERVAL_SECS)).await;
             }
             println!("[*] done probing - review [RX] lines above for any response");
+        }
+        Command::AncRaw(mode) => {
+            const LISTEN_SECS: u64 = 8;
+            let packet = buds_core::protocol::anc_set_packet_raw(mode);
+            println!("[TX] ANC SET (raw mode=0x{mode:02X})");
+            match connected.send_raw(&packet).await {
+                Ok(()) => {}
+                Err(BudsError::Timeout(msg)) => eprintln!("[WARN] {msg}"),
+                Err(e) => eprintln!("[ERROR] send failed: {e}"),
+            }
+            println!(
+                "[*] Listening for {LISTEN_SECS}s - watch for an ANC mode echo with \
+                 mode=0x{mode:02X}, or an [ASCII] \"adaptive_general_info\" line with \
+                 non-zero pre_mode/alg_mode/apply_mode fields."
+            );
+            tokio::time::sleep(Duration::from_secs(LISTEN_SECS)).await;
+            println!("[*] done");
         }
         Command::Help => unreachable!(),
     }
