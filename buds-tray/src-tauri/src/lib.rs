@@ -15,6 +15,10 @@ struct AppState {
     connected: Mutex<Option<Arc<ConnectedBuds>>>,
     battery: Mutex<Option<BatteryStatus>>,
     anc_mode: Mutex<Option<&'static str>>,
+    // Latest connection state, so a webview that loads (or wakes up) after
+    // an event was emitted can still ask for the current state - events
+    // alone are lost if nothing was listening yet.
+    connection: Mutex<ConnectionStatePayload>,
 }
 
 impl AppState {
@@ -23,6 +27,7 @@ impl AppState {
             connected: Mutex::new(None),
             battery: Mutex::new(None),
             anc_mode: Mutex::new(None),
+            connection: Mutex::new(ConnectionStatePayload::Disconnected),
         }
     }
 }
@@ -62,6 +67,11 @@ const EVENT_CONNECTION_STATE: &str = "buds://connection-state";
 const EVENT_BATTERY: &str = "buds://battery";
 const EVENT_ANC_MODE: &str = "buds://anc-mode";
 
+async fn publish_connection(app: &AppHandle, payload: ConnectionStatePayload) {
+    *app.state::<AppState>().connection.lock().await = payload.clone();
+    let _ = app.emit(EVENT_CONNECTION_STATE, payload);
+}
+
 /// Frontend-facing key for a raw ANC mode byte (see `AncMode`). Unknown
 /// bytes (e.g. Adaptive, not decoded yet) map to `None` so the UI shows no
 /// selection instead of a wrong one.
@@ -95,7 +105,7 @@ fn spawn_connect_flow(app: AppHandle) {
                     reason: reason.clone(),
                 },
             };
-            let _ = app.emit(EVENT_CONNECTION_STATE, payload);
+            publish_connection(&app, payload).await;
 
             if let ConnectionState::Connected(buds) = state {
                 if let Err(e) = buds.send_hello().await {
@@ -165,6 +175,13 @@ async fn reconnect(app: AppHandle, state: State<'_, AppState>) -> Result<(), Str
 }
 
 #[tauri::command]
+async fn get_connection_state(
+    state: State<'_, AppState>,
+) -> Result<ConnectionStatePayload, String> {
+    Ok(state.connection.lock().await.clone())
+}
+
+#[tauri::command]
 async fn get_battery(state: State<'_, AppState>) -> Result<Option<BatteryPayload>, String> {
     Ok(state.battery.lock().await.map(BatteryPayload::from))
 }
@@ -220,6 +237,7 @@ pub fn run() {
         .manage(AppState::new())
         .invoke_handler(tauri::generate_handler![
             reconnect,
+            get_connection_state,
             get_battery,
             get_anc_mode,
             anc_on,

@@ -268,9 +268,11 @@ function App() {
   }, []);
 
   useEffect(() => {
+    let gotConnectionEvent = false;
     const unlistenConnection = listen<ConnectionState>(
       "buds://connection-state",
       (event) => {
+        gotConnectionEvent = true;
         setConnection(event.payload);
         if (event.payload.state === "failed") {
           pushToast(event.payload.reason);
@@ -285,13 +287,40 @@ function App() {
     const unlistenAnc = listen<AncMode | null>("buds://anc-mode", (event) =>
       setActiveMode(event.payload),
     );
-    invoke<AncMode | null>("get_anc_mode").then((m) => {
-      if (m) setActiveMode(m);
-    });
-    invoke<Battery | null>("get_battery").then((b) => {
-      if (b) applyBattery(b, true);
-    });
+
+    // Events are lost if they fire before this view is listening (startup
+    // race) or while the window was asleep in the background, so pull the
+    // current state on mount and whenever the window comes back to the
+    // foreground instead of relying on events alone.
+    function sync() {
+      invoke<ConnectionState>("get_connection_state").then((cs) => {
+        // On mount, a live event is newer than this reply - don't clobber it.
+        if (!gotConnectionEvent) setConnection(cs);
+      });
+      invoke<AncMode | null>("get_anc_mode").then((m) => {
+        if (m) setActiveMode(m);
+      });
+      invoke<Battery | null>("get_battery").then((b) => {
+        if (b) applyBattery(b, true);
+      });
+    }
+    sync();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        gotConnectionEvent = false;
+        sync();
+      }
+    };
+    const onFocus = () => {
+      gotConnectionEvent = false;
+      sync();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisible);
+
     return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisible);
       unlistenConnection.then((f) => f());
       unlistenBattery.then((f) => f());
       unlistenAnc.then((f) => f());
