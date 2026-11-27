@@ -8,6 +8,15 @@ and the project uses [Semantic Versioning](https://semver.org/) (while below
 Version numbers live in several files; change them all at once with
 `scripts/set-version.sh <version>` (see the README's "Releasing" section).
 
+## [0.2.1] - 2026-11-27
+
+### Fixed
+- Noise control highlight stayed blank at launch when the buds were already
+  Off: the buds only echo their mode when it changes, so the app now shows
+  Off itself once the buds accept the initial Off command.
+- Duplicate event handling after a reconnect: the previous connection's
+  listener and watcher now stop once a newer connection replaces them.
+
 ## [0.2.0] - 2026-11-27
 
 ### Added
@@ -53,5 +62,6 @@ Version numbers live in several files; change them all at once with
   `anc-raw` commands.
 - First Tauri tray app shell (connection status, ANC buttons, battery).
 
+[0.2.1]: https://github.com/vaisx05/openbuds/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/vaisx05/openbuds/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/vaisx05/openbuds/releases/tag/v0.1.0

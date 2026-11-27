@@ -107,7 +107,7 @@ dependencies = [
 
 [[package]]
 name = "buds-cli"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "buds-core",
  "futures",
@@ -116,7 +116,7 @@ dependencies = [
 
 [[package]]
 name = "buds-core"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "async-stream",
  "btleplug",

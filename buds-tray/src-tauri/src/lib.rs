@@ -159,6 +159,15 @@ fn spawn_connect_flow(app: AppHandle, auto: bool) {
     });
 }
 
+async fn is_current_connection(app: &AppHandle, id: usize) -> bool {
+    app.state::<AppState>()
+        .connected
+        .lock()
+        .await
+        .as_ref()
+        .is_some_and(|c| Arc::as_ptr(c) as usize == id)
+}
+
 /// Everything that happens once a connection is up: handshake, publish to
 /// app state, forward notifications to the UI, start from a known ANC mode,
 /// and watch for the buds dropping so the app can reconnect by itself.
@@ -173,10 +182,20 @@ async fn on_connected(app: AppHandle, buds: Arc<ConnectedBuds>) {
     let app_state = app.state::<AppState>();
     *app_state.connected.lock().await = Some(buds.clone());
 
+    // Identity of this connection, so tasks tied to it can tell when a newer
+    // connection has replaced it (see `is_current_connection`).
+    let connection_id = Arc::as_ptr(&buds) as usize;
+
     let mut notifications = buds.subscribe_notifications();
     let app_for_notifications = app.clone();
     tauri::async_runtime::spawn(async move {
         while let Ok(event) = notifications.recv().await {
+            // After a reconnect the old connection's stream can still be
+            // delivering (same underlying peripheral) - stop forwarding so
+            // every event isn't handled twice.
+            if !is_current_connection(&app_for_notifications, connection_id).await {
+                break;
+            }
             // Heartbeats and diagnostics are noisy; log the rest.
             match &event {
                 NotificationEvent::DeviceStatus { kind: 0xF1, .. } => {}
@@ -208,8 +227,16 @@ async fn on_connected(app: AppHandle, buds: Arc<ConnectedBuds>) {
     // app would otherwise have no idea what to highlight. Start
     // every connection from a known state: Off. The buds' mode
     // echo then drives the UI as usual.
-    if let Err(e) = buds.set_anc_mode(AncMode::Off).await {
-        eprintln!("[buds-tray] initial ANC Off failed: {e}");
+    match buds.set_anc_mode(AncMode::Off).await {
+        // The buds only echo their mode when it *changes*, so if they were
+        // already Off there is no echo and the UI would stay blank. The set
+        // was accepted, so publish Off ourselves (a real echo, if any,
+        // arrives later and corrects it).
+        Ok(()) | Err(BudsError::Timeout(_)) => {
+            *app.state::<AppState>().anc_mode.lock().await = Some("off");
+            let _ = app.emit(EVENT_ANC_MODE, Some("off"));
+        }
+        Err(e) => eprintln!("[buds-tray] initial ANC Off failed: {e}"),
     }
 
     // Auto-reconnect: when the buds drop, clear state, tell the UI, and
@@ -217,7 +244,18 @@ async fn on_connected(app: AppHandle, buds: Arc<ConnectedBuds>) {
     // replaced (manual reconnect), in which case that flow owns the state.
     let watched = buds.clone();
     tauri::async_runtime::spawn(async move {
-        watched.wait_disconnected().await;
+        // Also bail out if this connection is replaced (manual reconnect),
+        // so the old one isn't kept alive forever.
+        loop {
+            tokio::select! {
+                _ = watched.wait_disconnected() => break,
+                _ = tokio::time::sleep(Duration::from_secs(2)) => {
+                    if !is_current_connection(&app, connection_id).await {
+                        return;
+                    }
+                }
+            }
+        }
         let state = app.state::<AppState>();
         let still_current = state
             .connected

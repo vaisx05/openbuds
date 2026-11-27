@@ -12,7 +12,7 @@ OnePlus doesn't officially support macOS/Windows/Linux. A Rust core
 (`btleplug`) shared by a CLI and a Tauri/React tray app. macOS is the
 supported platform today.
 
-Current version: **0.2.0** - see the [changelog](CHANGELOG.md).
+Current version: **0.2.1** - see the [changelog](CHANGELOG.md).
 
 Protocol reverse-engineered from BLE traffic captures, starting from a
 working macOS-only Swift/CoreBluetooth prototype ([`nordbuds4.swift`](nordbuds4.swift)).
