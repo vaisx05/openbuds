@@ -245,6 +245,29 @@ h2 {
   padding: 1.5rem 1.5rem 1.4rem;
 }
 
+.card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.updated {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+.updated.live {
+  color: var(--good);
+}
+
+.battery-row {
+  transition: opacity 0.3s ease;
+}
+
+.battery-row.stale {
+  opacity: 0.6;
+}
+
 .battery-row {
   display: flex;
   justify-content: space-between;

@@ -112,6 +112,12 @@ fn spawn_connect_flow(app: AppHandle) {
                 let app_for_notifications = app.clone();
                 tauri::async_runtime::spawn(async move {
                     while let Ok(event) = notifications.recv().await {
+                        // Heartbeats and diagnostics are noisy; log the rest.
+                        match &event {
+                            NotificationEvent::DeviceStatus { kind: 0xF1, .. } => {}
+                            NotificationEvent::Unknown(raw) if raw.cat == 0x00 && raw.sub == 0x04 => {}
+                            other => eprintln!("[buds-tray] event: {other:?}"),
+                        }
                         // The buds echo the active mode whenever it changes -
                         // whether we set it, the phone did, or a touch gesture
                         // on the buds did - so this is the source of truth for
@@ -132,6 +138,14 @@ fn spawn_connect_flow(app: AppHandle) {
                         }
                     }
                 });
+
+                // The buds never report their current mode at connect, so the
+                // app would otherwise have no idea what to highlight. Start
+                // every connection from a known state: Off. The buds' mode
+                // echo then drives the UI as usual.
+                if let Err(e) = buds.set_anc_mode(AncMode::Off).await {
+                    eprintln!("[buds-tray] initial ANC Off failed: {e}");
+                }
 
                 // Connect flow ends once Connected is reached and Hello is
                 // sent - the stream would otherwise stay pending forever.
@@ -167,7 +181,10 @@ async fn set_anc_mode(state: &AppState, mode: AncMode) -> Result<(), String> {
         .await
         .clone()
         .ok_or_else(|| "not connected".to_string())?;
-    match buds.set_anc_mode(mode).await {
+    eprintln!("[buds-tray] sending ANC mode {mode:?}");
+    let result = buds.set_anc_mode(mode).await;
+    eprintln!("[buds-tray] ANC write result: {result:?}");
+    match result {
         Ok(()) => Ok(()),
         // Write-timeout is a known btleplug/CoreBluetooth quirk: the packet
         // has already gone out. Treating it as an error made the UI skip the

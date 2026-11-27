@@ -179,15 +179,49 @@ function ToastStack({
   );
 }
 
+const EMPTY_BATTERY: Battery = { left: null, right: null, case: null };
+const BATTERY_STORAGE_KEY = "buds-tray.battery";
+
+// The buds only push battery on their own schedule (and only with the phone
+// connected), so the last reading is remembered across launches and shown
+// with its age instead of going blank.
+function loadStoredBattery(): { battery: Battery; at: number | null } {
+  try {
+    const raw = localStorage.getItem(BATTERY_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        battery: { ...EMPTY_BATTERY, ...parsed.battery },
+        at: typeof parsed.at === "number" ? parsed.at : null,
+      };
+    }
+  } catch {
+    /* storage unavailable or corrupt - start empty */
+  }
+  return { battery: EMPTY_BATTERY, at: null };
+}
+
+function timeAgo(then: number, now: number): string {
+  const secs = Math.max(0, Math.round((now - then) / 1000));
+  if (secs < 45) return "just now";
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} h ago`;
+  return `${Math.floor(hours / 24)} d ago`;
+}
+
 function App() {
   const [connection, setConnection] = useState<ConnectionState>({
     state: "disconnected",
   });
-  const [battery, setBattery] = useState<Battery>({
-    left: null,
-    right: null,
-    case: null,
-  });
+  const [battery, setBattery] = useState<Battery>(() => loadStoredBattery().battery);
+  const [batteryUpdatedAt, setBatteryUpdatedAt] = useState<number | null>(
+    () => loadStoredBattery().at,
+  );
+  // True once a battery push arrived in this session (vs. only remembered).
+  const [liveBattery, setLiveBattery] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
   const [activeMode, setActiveMode] = useState<AncMode | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [showPhoneHint, setShowPhoneHint] = useState(false);
@@ -204,6 +238,35 @@ function App() {
     setToasts((t) => t.filter((x) => x.id !== id));
   }
 
+  // A push can carry only some of left/right/case - keep the previous value
+  // for any that are missing instead of blanking them.
+  function applyBattery(b: Battery, keepTimestamp = false) {
+    setBattery((prev) => ({
+      left: b.left ?? prev.left,
+      right: b.right ?? prev.right,
+      case: b.case ?? prev.case,
+    }));
+    setBatteryUpdatedAt((t) => (keepTimestamp && t !== null ? t : Date.now()));
+    setLiveBattery(true);
+  }
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        BATTERY_STORAGE_KEY,
+        JSON.stringify({ battery, at: batteryUpdatedAt }),
+      );
+    } catch {
+      /* ignore */
+    }
+  }, [battery, batteryUpdatedAt]);
+
+  // Re-render periodically so "x min ago" stays current.
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(timer);
+  }, []);
+
   useEffect(() => {
     const unlistenConnection = listen<ConnectionState>(
       "buds://connection-state",
@@ -215,7 +278,7 @@ function App() {
       },
     );
     const unlistenBattery = listen<Battery>("buds://battery", (event) =>
-      setBattery(event.payload),
+      applyBattery(event.payload),
     );
     // The buds echo their active mode on every change (ours, the phone's, or
     // a touch gesture), so this keeps the highlight in sync with reality.
@@ -226,7 +289,7 @@ function App() {
       if (m) setActiveMode(m);
     });
     invoke<Battery | null>("get_battery").then((b) => {
-      if (b) setBattery(b);
+      if (b) applyBattery(b, true);
     });
     return () => {
       unlistenConnection.then((f) => f());
@@ -236,8 +299,6 @@ function App() {
   }, []);
 
   const isConnected = connection.state === "connected";
-  const hasBattery =
-    battery.left !== null || battery.right !== null || battery.case !== null;
   const status = statusMeta(connection);
 
   // The buds don't respond to a battery *query* - they only push a status
@@ -246,13 +307,13 @@ function App() {
   // "still —  after a while" almost always means "no phone connected",
   // not "broken" - surface that rather than leaving it silent.
   useEffect(() => {
-    if (!isConnected || hasBattery) {
+    if (!isConnected || liveBattery) {
       setShowPhoneHint(false);
       return;
     }
     const timer = setTimeout(() => setShowPhoneHint(true), 12_000);
     return () => clearTimeout(timer);
-  }, [isConnected, hasBattery]);
+  }, [isConnected, liveBattery]);
 
   async function setMode(mode: AncMode, command: string) {
     // Optimistic: highlight immediately, roll back only on a hard failure.
@@ -269,7 +330,7 @@ function App() {
 
   async function reconnect() {
     setActiveMode(null);
-    setBattery({ left: null, right: null, case: null });
+    setLiveBattery(false);
     await invoke("reconnect");
   }
 
@@ -303,8 +364,15 @@ function App() {
         </div>
 
         <section className="card battery-card">
-          <h2>Battery</h2>
-          <div className="battery-row">
+          <div className="card-head">
+            <h2>Battery</h2>
+            <span className={`updated ${liveBattery ? "live" : ""}`}>
+              {batteryUpdatedAt === null
+                ? "No data yet"
+                : `Updated ${timeAgo(batteryUpdatedAt, now)}`}
+            </span>
+          </div>
+          <div className={`battery-row ${liveBattery ? "" : "stale"}`}>
             {(["left", "right", "case"] as const).map((key) => (
               <div className="battery-item" key={key}>
                 <BatteryRing value={battery[key]} />
