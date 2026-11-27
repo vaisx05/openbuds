@@ -163,3 +163,8 @@ is documented in `buds-core/src/response.rs`. Summary:
 `buds-cli`'s `monitor` command streams every raw event with an
 elapsed-time prefix, for correlating a specific physical action against
 the exact event(s) it produces.
+
+## License
+
+[MIT](LICENSE). The vendored `btleplug` fork in `vendor/btleplug` keeps its
+own license (see `vendor/btleplug/LICENSE.md`).

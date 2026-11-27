@@ -3,6 +3,7 @@
 [package]
 name = "buds-tray"
 version = "0.2.1"
+license = "MIT"
 description = "OpenBuds - desktop controller for OnePlus Buds"
 authors = ["vaisx05"]
 edition = "2021"

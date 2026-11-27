@@ -1,6 +1,7 @@
 [package]
 name = "buds-core"
 version = "0.2.1"
+license = "MIT"
 edition = "2021"
 
 [dependencies]
