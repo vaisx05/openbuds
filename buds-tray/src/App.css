@@ -74,15 +74,11 @@ body {
 }
 
 .device-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
   width: 3rem;
   height: 3rem;
   flex-shrink: 0;
   border-radius: 14px;
-  background: var(--accent-bg);
-  color: #7db2ff;
+  user-select: none;
 }
 
 .device-info {

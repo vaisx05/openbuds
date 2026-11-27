@@ -1,9 +1,18 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/openbuds-logo-dark.svg">
+    <img alt="OpenBuds - ANC control for OnePlus Buds" src="assets/openbuds-logo-light.svg" width="480">
+  </picture>
+</p>
+
 # openbuds
 
-Cross-platform BLE controller for the OnePlus Buds 4 (ANC + battery), since
-OnePlus doesn't officially support macOS/Windows/Linux. Rust core
-(`btleplug`) + a CLI today, with a Tauri/React/three.js tray app planned on
-top of the same core.
+Desktop controller for the OnePlus Buds 4 (noise control + battery), since
+OnePlus doesn't officially support macOS/Windows/Linux. A Rust core
+(`btleplug`) shared by a CLI and a Tauri/React tray app. macOS is the
+supported platform today.
+
+Current version: **0.2.0** - see the [changelog](CHANGELOG.md).
 
 Protocol reverse-engineered from BLE traffic captures, starting from a
 working macOS-only Swift/CoreBluetooth prototype ([`nordbuds4.swift`](nordbuds4.swift)).
@@ -20,9 +29,11 @@ working macOS-only Swift/CoreBluetooth prototype ([`nordbuds4.swift`](nordbuds4.
 - **Discovery: reliable.** Connects directly to an already-OS-connected
   peripheral (no BLE scan needed) via a vendored `btleplug` patch - see
   below.
-- **Tray app** (`buds-tray/`, Tauri + React): functional shell with
-  connection status, ANC buttons, and battery display. No 3D model or
-  visual design pass yet.
+- **Tray app / OpenBuds** (`buds-tray/`, Tauri + React): connection status,
+  noise control (Off / ANC / Transparency, kept in sync with changes made
+  from the phone or the buds), ring battery gauges with an "updated x ago"
+  label, a case image that opens when connected, and automatic reconnect
+  when the buds drop.
 - Adaptive ANC mode: byte not yet found.
 - Some passive status pushes (`kind=0x02` "device status", `cat=0x01
   sub=0x05`) are logged but not decoded - see [Protocol notes](#protocol-notes).
@@ -32,20 +43,62 @@ working macOS-only Swift/CoreBluetooth prototype ([`nordbuds4.swift`](nordbuds4.
 ```
 buds-core/        BLE + protocol logic (library crate)
 buds-cli/         CLI: on / off / trans / battery / monitor / help
-buds-tray/        Tauri + React tray app (own Cargo workspace)
+buds-tray/        Tauri + React tray app, "OpenBuds" (own Cargo workspace)
+scripts/          set-version.sh - keeps versions in sync across manifests
 vendor/btleplug/  vendored fork of btleplug 0.11.8 (see below)
 nordbuds4.swift   original macOS-only Swift/CoreBluetooth prototype (reference)
 ```
 
+## Install
+
+Download `OpenBuds_<version>_aarch64.dmg` from the
+[releases page](https://github.com/vaisx05/openbuds/releases) and drag
+OpenBuds to Applications. The build is **not signed or notarized**, so the
+first launch needs right-click → Open (or `xattr -cr /Applications/OpenBuds.app`).
+Allow the Bluetooth permission prompt when it appears.
+
+Pair the buds in macOS Bluetooth settings first. For battery readings the
+OnePlus app on your phone must also be connected to the buds (see
+[Status](#status)).
+
 ## Building
+
+CLI:
 
 ```
 cargo build
 cargo run -p buds-cli -- help
 ```
 
+Tray app (needs Node and the Rust toolchain; run `source "$HOME/.cargo/env"`
+first in a fresh shell):
+
+```
+cd buds-tray
+npm install
+npm run tauri dev      # run with hot reload
+npm run tauri build    # app bundle + DMG in src-tauri/target/release/bundle/
+```
+
 Requires the buds to already be connected/paired via the OS Bluetooth
 settings, or in range and freshly out of the case (BLE scan fallback).
+
+## Versioning and releasing
+
+The project follows [Semantic Versioning](https://semver.org/); changes are
+recorded in [CHANGELOG.md](CHANGELOG.md). The version appears in five files
+(`buds-core`, `buds-cli`, `buds-tray` Cargo manifests, `package.json`,
+`tauri.conf.json`), so never edit it by hand:
+
+```
+scripts/set-version.sh 0.3.0     # updates all manifests and lockfiles
+# add a CHANGELOG.md entry, commit
+git tag v0.3.0
+git push --follow-tags
+cd buds-tray && npm run tauri build
+gh release create v0.3.0 src-tauri/target/release/bundle/dmg/*.dmg \
+  --title "v0.3.0" --notes "<changelog section>"
+```
 
 ## The vendored btleplug patch
 

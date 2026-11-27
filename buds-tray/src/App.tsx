@@ -137,19 +137,6 @@ function BatteryRing({ value }: { value: number | null }) {
   );
 }
 
-function BudsIcon() {
-  return (
-    <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
-      <path
-        d="M8 3.5c-2 0-3.4 1.7-3.4 4 0 2 .9 3.4 2 4.2v6.3a1.6 1.6 0 0 0 3.2 0V7.5C9.8 5.2 9 3.5 8 3.5zM16 3.5c2 0 3.4 1.7 3.4 4 0 2-.9 3.4-2 4.2v6.3a1.6 1.6 0 0 1-3.2 0V7.5c0-2.3.8-4 1.8-4z"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
 function ReconnectIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
@@ -370,9 +357,7 @@ function App() {
     <main className="container">
       <div className="panel">
         <header className="header">
-          <div className="device-icon">
-            <BudsIcon />
-          </div>
+          <img className="device-icon" src="/openbuds-icon.svg" alt="OpenBuds" draggable={false} />
           <div className="device-info">
             <h1>OnePlus Buds 4</h1>
             <div className={`status tone-${status.tone}`}>
