@@ -1,9 +1,9 @@
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/openbuds-logo-dark.svg">
-    <img alt="OpenBuds - ANC control for OnePlus Buds" src="assets/openbuds-logo-light.svg" width="480">
-  </picture>
-</p>
+<div align="center">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/openbuds-logo-dark.svg">
+  <img alt="OpenBuds - ANC control for OnePlus Buds" src="assets/openbuds-logo-light.svg" width="480">
+</picture>
 
 # openbuds
 
@@ -16,6 +16,10 @@ Current version: **0.2.1** - see the [changelog](CHANGELOG.md).
 
 Protocol reverse-engineered from BLE traffic captures, starting from a
 working macOS-only Swift/CoreBluetooth prototype ([`nordbuds4.swift`](nordbuds4.swift)).
+
+[Install](#install) · [Building](#building) · [Protocol notes](#protocol-notes) · [License](#license)
+
+</div>
 
 ## Status
 
