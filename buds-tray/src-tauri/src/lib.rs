@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use buds_core::{battery_guess, connect, AncMode, BatteryStatus, ConnectedBuds, ConnectionState, NotificationEvent};
+use buds_core::{
+    battery_guess, connect, AncMode, BatteryStatus, BudsError, ConnectedBuds, ConnectionState,
+    NotificationEvent,
+};
 use futures::StreamExt;
 use serde::Serialize;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
@@ -11,6 +14,7 @@ use tokio::sync::Mutex;
 struct AppState {
     connected: Mutex<Option<Arc<ConnectedBuds>>>,
     battery: Mutex<Option<BatteryStatus>>,
+    anc_mode: Mutex<Option<&'static str>>,
 }
 
 impl AppState {
@@ -18,6 +22,7 @@ impl AppState {
         Self {
             connected: Mutex::new(None),
             battery: Mutex::new(None),
+            anc_mode: Mutex::new(None),
         }
     }
 }
@@ -55,6 +60,19 @@ impl From<BatteryStatus> for BatteryPayload {
 
 const EVENT_CONNECTION_STATE: &str = "buds://connection-state";
 const EVENT_BATTERY: &str = "buds://battery";
+const EVENT_ANC_MODE: &str = "buds://anc-mode";
+
+/// Frontend-facing key for a raw ANC mode byte (see `AncMode`). Unknown
+/// bytes (e.g. Adaptive, not decoded yet) map to `None` so the UI shows no
+/// selection instead of a wrong one.
+fn anc_mode_key(raw: u8) -> Option<&'static str> {
+    match raw {
+        x if x == AncMode::Off.raw() => Some("off"),
+        x if x == AncMode::Anc.raw() => Some("on"),
+        x if x == AncMode::Transparency.raw() => Some("trans"),
+        _ => None,
+    }
+}
 
 /// Drives the connect flow once, storing the resulting `ConnectedBuds` in
 /// app state and emitting a connection-state event at every transition -
@@ -94,6 +112,16 @@ fn spawn_connect_flow(app: AppHandle) {
                 let app_for_notifications = app.clone();
                 tauri::async_runtime::spawn(async move {
                     while let Ok(event) = notifications.recv().await {
+                        // The buds echo the active mode whenever it changes -
+                        // whether we set it, the phone did, or a touch gesture
+                        // on the buds did - so this is the source of truth for
+                        // what the UI highlights.
+                        if let NotificationEvent::AncModeEcho { mode, .. } = &event {
+                            let key = anc_mode_key(*mode);
+                            let app_state = app_for_notifications.state::<AppState>();
+                            *app_state.anc_mode.lock().await = key;
+                            let _ = app_for_notifications.emit(EVENT_ANC_MODE, key);
+                        }
                         if let NotificationEvent::DeviceStatus { .. } = &event {
                             if let Some(status) = battery_guess(&event) {
                                 let app_state = app_for_notifications.state::<AppState>();
@@ -117,6 +145,7 @@ fn spawn_connect_flow(app: AppHandle) {
 async fn reconnect(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     *state.connected.lock().await = None;
     *state.battery.lock().await = None;
+    *state.anc_mode.lock().await = None;
     spawn_connect_flow(app);
     Ok(())
 }
@@ -124,6 +153,11 @@ async fn reconnect(app: AppHandle, state: State<'_, AppState>) -> Result<(), Str
 #[tauri::command]
 async fn get_battery(state: State<'_, AppState>) -> Result<Option<BatteryPayload>, String> {
     Ok(state.battery.lock().await.map(BatteryPayload::from))
+}
+
+#[tauri::command]
+async fn get_anc_mode(state: State<'_, AppState>) -> Result<Option<&'static str>, String> {
+    Ok(*state.anc_mode.lock().await)
 }
 
 async fn set_anc_mode(state: &AppState, mode: AncMode) -> Result<(), String> {
@@ -135,9 +169,14 @@ async fn set_anc_mode(state: &AppState, mode: AncMode) -> Result<(), String> {
         .ok_or_else(|| "not connected".to_string())?;
     match buds.set_anc_mode(mode).await {
         Ok(()) => Ok(()),
-        // Same write-timeout quirk as the CLI: the command likely still
-        // landed, so this is surfaced as a soft error string, not treated
-        // as an outright failure by the frontend.
+        // Write-timeout is a known btleplug/CoreBluetooth quirk: the packet
+        // has already gone out. Treating it as an error made the UI skip the
+        // mode update even though the buds switched, so it's a success here;
+        // the buds' mode echo confirms the real state either way.
+        Err(BudsError::Timeout(msg)) => {
+            eprintln!("[buds-tray] ANC write timeout (ignored): {msg}");
+            Ok(())
+        }
         Err(e) => Err(e.to_string()),
     }
 }
@@ -165,6 +204,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             reconnect,
             get_battery,
+            get_anc_mode,
             anc_on,
             anc_off,
             anc_transparency
