@@ -44,10 +44,15 @@ working macOS-only Swift/CoreBluetooth prototype ([`nordbuds4.swift`](nordbuds4.
 buds-core/        BLE + protocol logic (library crate)
 buds-cli/         CLI: on / off / trans / battery / monitor / help
 buds-tray/        Tauri + React tray app, "OpenBuds" (own Cargo workspace)
-scripts/          set-version.sh - keeps versions in sync across manifests
+scripts/          set-version.sh (sync versions), build-release.sh (shareable build)
 vendor/btleplug/  vendored fork of btleplug 0.11.8 (see below)
 nordbuds4.swift   original macOS-only Swift/CoreBluetooth prototype (reference)
 ```
+
+> **Unofficial.** OpenBuds is an independent project and is not affiliated
+> with or endorsed by OnePlus. "OnePlus" and "OnePlus Buds" are trademarks
+> of their respective owner. It talks to the buds using a protocol worked out
+> by experiment, so use it at your own risk.
 
 ## Install
 
@@ -78,6 +83,8 @@ cd buds-tray
 npm install
 npm run tauri dev      # run with hot reload
 npm run tauri build    # app bundle + DMG in src-tauri/target/release/bundle/
+                       # (for a shareable build use scripts/build-release.sh - it
+                       # strips your home path out of the binary)
 ```
 
 Requires the buds to already be connected/paired via the OS Bluetooth
@@ -95,8 +102,8 @@ scripts/set-version.sh 0.3.0     # updates all manifests and lockfiles
 # add a CHANGELOG.md entry, commit
 git tag v0.3.0
 git push --follow-tags
-cd buds-tray && npm run tauri build
-gh release create v0.3.0 src-tauri/target/release/bundle/dmg/*.dmg \
+scripts/build-release.sh         # like `npm run tauri build`, but scrubs local paths
+gh release create v0.3.0 buds-tray/src-tauri/target/release/bundle/dmg/*.dmg \
   --title "v0.3.0" --notes "<changelog section>"
 ```
 
