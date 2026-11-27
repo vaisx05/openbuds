@@ -7,6 +7,7 @@ type ConnectionState =
   | { state: "disconnected" }
   | { state: "lookingForConnectedDevice" }
   | { state: "scanning" }
+  | { state: "reconnecting" }
   | { state: "connected"; deviceName: string }
   | { state: "failed"; reason: string };
 
@@ -81,6 +82,8 @@ function statusMeta(cs: ConnectionState): {
       return { label: "Looking for buds…", tone: "busy" };
     case "scanning":
       return { label: "Scanning…", tone: "busy" };
+    case "reconnecting":
+      return { label: "Reconnecting…", tone: "busy" };
     case "connected":
       return { label: "Connected", tone: "good" };
     case "failed":

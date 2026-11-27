@@ -4,10 +4,10 @@ pub mod response;
 
 use std::sync::Arc;
 
-use btleplug::api::{Characteristic, Peripheral as _};
+use btleplug::api::{Central as _, CentralEvent, Characteristic, Peripheral as _};
 use btleplug::platform::Peripheral;
 use futures::Stream;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, watch};
 use tokio::sync::Mutex;
 
 pub use protocol::AncMode;
@@ -45,6 +45,9 @@ pub struct ConnectedBuds {
     write_char: Characteristic,
     pub info: PeripheralInfo,
     notifications_tx: broadcast::Sender<NotificationEvent>,
+    // Flips to `true` once the OS reports this peripheral disconnected (or
+    // its notification stream ends) - see `wait_disconnected`.
+    disconnected_tx: watch::Sender<bool>,
     _reader_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
 
@@ -56,6 +59,14 @@ impl ConnectedBuds {
     pub async fn set_anc_mode(&self, mode: AncMode) -> Result<(), BudsError> {
         let packet = protocol::anc_set_packet(mode);
         ble::write_packet(&self.peripheral, &self.write_char, &packet).await
+    }
+
+    /// Resolves once the buds have disconnected (case closed, out of range,
+    /// another device took over, ...). Returns immediately if that already
+    /// happened.
+    pub async fn wait_disconnected(&self) {
+        let mut rx = self.disconnected_tx.subscribe();
+        let _ = rx.wait_for(|disconnected| *disconnected).await;
     }
 
     /// Send an arbitrary raw packet - for probing undocumented request
@@ -142,7 +153,33 @@ pub fn connect() -> impl Stream<Item = ConnectionState> {
             }
         };
 
+        let (disconnected_tx, _) = watch::channel(false);
+
+        // Primary disconnect signal: CoreBluetooth's own disconnect event
+        // for this peripheral.
+        let mut central_events = match adapter.events().await {
+            Ok(s) => s,
+            Err(e) => {
+                yield ConnectionState::Failed(format!("events failed: {e}"));
+                return;
+            }
+        };
+        let peripheral_id = peripheral.id();
+        let disconnect_events_tx = disconnected_tx.clone();
+        tokio::spawn(async move {
+            use futures::StreamExt;
+            while let Some(event) = central_events.next().await {
+                if let CentralEvent::DeviceDisconnected(id) = event {
+                    if id == peripheral_id {
+                        disconnect_events_tx.send_replace(true);
+                        break;
+                    }
+                }
+            }
+        });
+
         let tx_clone = tx.clone();
+        let disconnect_reader_tx = disconnected_tx.clone();
         let reader_task = tokio::spawn(async move {
             use futures::StreamExt;
             let mut stream = notification_stream;
@@ -152,6 +189,8 @@ pub fn connect() -> impl Stream<Item = ConnectionState> {
                     let _ = tx_clone.send(event);
                 }
             }
+            // Backup disconnect signal: the notification stream ending.
+            disconnect_reader_tx.send_replace(true);
         });
 
         let connected = ConnectedBuds {
@@ -159,6 +198,7 @@ pub fn connect() -> impl Stream<Item = ConnectionState> {
             write_char: chars.write_char,
             info,
             notifications_tx: tx,
+            disconnected_tx,
             _reader_task: Mutex::new(Some(reader_task)),
         };
 
